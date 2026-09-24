@@ -4,6 +4,8 @@ import type { WeatherCustomLayer } from "../map/WeatherCustomLayer.js";
 import type { WeatherRenderOptions } from "../map/WeatherRenderOptions.js";
 import { createPaletteTextureData } from "../palette/createPaletteTextureData.js";
 import type { WeatherRenderFrame } from "./WeatherRenderFrame.js";
+import type { WeatherGlState } from "./WeatherGlState.js";
+import type { WeatherPixelUnpackState } from "./WeatherPixelUnpackState.js";
 
 const VERTEX_SHADER = [
   "#version 300 es",
@@ -115,6 +117,7 @@ export class RegularGridWeatherLayer implements WeatherCustomLayer {
   #gl: WebGL2RenderingContext | null = null;
   #program: WebGLProgram | null = null;
   #buffer: WebGLBuffer | null = null;
+  #vertexArray: WebGLVertexArrayObject | null = null;
   #dataTexture: WebGLTexture | null = null;
   #paletteTexture: WebGLTexture | null = null;
   #frame: WeatherRenderFrame | null = null;
@@ -133,8 +136,11 @@ export class RegularGridWeatherLayer implements WeatherCustomLayer {
 
   setFrame(frame: WeatherRenderFrame): void {
     this.#frame = frame;
-    if (this.#gl !== null && this.#program !== null) {
-      this.#uploadFrame(this.#gl, frame);
+    const gl = this.#gl;
+    if (gl !== null && this.#program !== null) {
+      this.#withPreservedState(gl, () => {
+        this.#uploadFrame(gl, frame);
+      }, true);
     }
     this.#repaint?.();
   }
@@ -154,8 +160,11 @@ export class RegularGridWeatherLayer implements WeatherCustomLayer {
       return;
     }
     this.#frame = { ...this.#frame, palette };
-    if (this.#gl !== null) {
-      this.#uploadPalette(this.#gl, palette);
+    const gl = this.#gl;
+    if (gl !== null) {
+      this.#withPreservedState(gl, () => {
+        this.#uploadPalette(gl, palette);
+      }, true);
     }
     this.#repaint?.();
   }
@@ -169,35 +178,53 @@ export class RegularGridWeatherLayer implements WeatherCustomLayer {
     }
 
     this.#gl = gl;
-    this.#program = this.#createProgram(gl);
-    this.#buffer = gl.createBuffer();
-    this.#dataTexture = gl.createTexture();
-    this.#paletteTexture = gl.createTexture();
+    try {
+      this.#program = this.#createProgram(gl);
+      this.#buffer = gl.createBuffer();
+      this.#vertexArray = gl.createVertexArray();
+      this.#dataTexture = gl.createTexture();
+      this.#paletteTexture = gl.createTexture();
 
-    if (
-      this.#buffer === null ||
-      this.#dataTexture === null ||
-      this.#paletteTexture === null
-    ) {
-      throw new WeatherLayersError(
-        "WEBGL2_UNSUPPORTED",
-        "Unable to allocate WebGL2 resources"
-      );
-    }
+      if (
+        this.#buffer === null ||
+        this.#vertexArray === null ||
+        this.#dataTexture === null ||
+        this.#paletteTexture === null
+      ) {
+        throw new WeatherLayersError(
+          "WEBGL2_UNSUPPORTED",
+          "Unable to allocate WebGL2 resources"
+        );
+      }
 
-    if (this.#frame !== null) {
-      this.#uploadFrame(gl, this.#frame);
+      const frame = this.#frame;
+      if (frame !== null) {
+        this.#withPreservedState(gl, () => {
+          this.#uploadFrame(gl, frame);
+        }, true);
+      }
+    } catch (error) {
+      this.#release(gl);
+      this.#gl = null;
+      throw error;
     }
   }
 
   render(gl: WebGL2RenderingContext, options: WeatherRenderOptions): void {
+    const program = this.#program;
+    const buffer = this.#buffer;
+    const vertexArray = this.#vertexArray;
+    const dataTexture = this.#dataTexture;
+    const paletteTexture = this.#paletteTexture;
+    const frame = this.#frame;
     if (
       !this.#visible ||
-      this.#frame === null ||
-      this.#program === null ||
-      this.#buffer === null ||
-      this.#dataTexture === null ||
-      this.#paletteTexture === null
+      frame === null ||
+      program === null ||
+      buffer === null ||
+      vertexArray === null ||
+      dataTexture === null ||
+      paletteTexture === null
     ) {
       return;
     }
@@ -210,54 +237,53 @@ export class RegularGridWeatherLayer implements WeatherCustomLayer {
       return;
     }
 
-    const frame = this.#frame;
-    gl.useProgram(this.#program);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.#buffer);
+    this.#withPreservedState(gl, () => {
+      gl.useProgram(program);
+      gl.bindVertexArray(vertexArray);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
 
-    const position = gl.getAttribLocation(this.#program, "a_position");
-    gl.enableVertexAttribArray(position);
-    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+      const position = gl.getAttribLocation(program, "a_position");
+      gl.enableVertexAttribArray(position);
+      gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
 
-    this.#uniformMatrix(gl, "u_matrix", matrix);
-    this.#uniform2i(gl, "u_grid_size", frame.asset.width, frame.asset.height);
-    this.#uniform4f(gl, "u_bounds", ...frame.bounds);
-    this.#uniform1f(gl, "u_opacity", this.#opacity);
-    this.#uniform1i(gl, "u_kind", frame.layer.kind === "scalar" ? 0 : 1);
-    this.#uniform1i(
-      gl,
-      "u_sqrt",
-      frame.layer.kind === "scalar" &&
-        frame.layer.encoding.type === "scalar-png-r8-sqrt-v1"
-        ? 1
-        : 0
-    );
-
-    if (frame.layer.kind === "scalar") {
-      this.#uniform2f(gl, "u_value_range", ...frame.layer.encoding.valueRange);
-      this.#uniform2f(gl, "u_component_range", -1, 1);
-    } else {
-      this.#uniform2f(gl, "u_value_range", 0, 1);
-      this.#uniform2f(
+      this.#uniformMatrix(gl, "u_matrix", matrix);
+      this.#uniform2i(gl, "u_grid_size", frame.asset.width, frame.asset.height);
+      this.#uniform4f(gl, "u_bounds", ...frame.bounds);
+      this.#uniform1f(gl, "u_opacity", this.#opacity);
+      this.#uniform1i(gl, "u_kind", frame.layer.kind === "scalar" ? 0 : 1);
+      this.#uniform1i(
         gl,
-        "u_component_range",
-        ...frame.layer.encoding.componentRange
+        "u_sqrt",
+        frame.layer.kind === "scalar" &&
+          frame.layer.encoding.type === "scalar-png-r8-sqrt-v1"
+          ? 1
+          : 0
       );
-    }
-    this.#uniform2f(gl, "u_palette_range", ...frame.palette.valueRange);
 
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.#dataTexture);
-    this.#uniform1i(gl, "u_data", 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.#paletteTexture);
-    this.#uniform1i(gl, "u_palette", 1);
+      if (frame.layer.kind === "scalar") {
+        this.#uniform2f(gl, "u_value_range", ...frame.layer.encoding.valueRange);
+        this.#uniform2f(gl, "u_component_range", -1, 1);
+      } else {
+        this.#uniform2f(gl, "u_value_range", 0, 1);
+        this.#uniform2f(
+          gl,
+          "u_component_range",
+          ...frame.layer.encoding.componentRange
+        );
+      }
+      this.#uniform2f(gl, "u_palette_range", ...frame.palette.valueRange);
 
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, dataTexture);
+      this.#uniform1i(gl, "u_data", 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, paletteTexture);
+      this.#uniform1i(gl, "u_palette", 1);
 
-    gl.disableVertexAttribArray(position);
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    });
   }
 
   onRemove(_map: unknown, gl: WebGL2RenderingContext): void {
@@ -291,9 +317,9 @@ export class RegularGridWeatherLayer implements WeatherCustomLayer {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.#buffer);
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
+    this.#prepareTextureUpload(gl);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.#dataTexture);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -335,9 +361,9 @@ export class RegularGridWeatherLayer implements WeatherCustomLayer {
     if (this.#paletteTexture === null) {
       return;
     }
+    this.#prepareTextureUpload(gl);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.#paletteTexture);
-    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -357,33 +383,45 @@ export class RegularGridWeatherLayer implements WeatherCustomLayer {
 
   #createProgram(gl: WebGL2RenderingContext): WebGLProgram {
     const vertex = this.#compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
-    const fragment = this.#compileShader(
-      gl,
-      gl.FRAGMENT_SHADER,
-      FRAGMENT_SHADER
-    );
-    const program = gl.createProgram();
-    if (program === null) {
-      throw new WeatherLayersError(
-        "WEBGL2_UNSUPPORTED",
-        "Unable to create WebGL program"
-      );
-    }
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    gl.deleteShader(vertex);
-    gl.deleteShader(fragment);
+    let fragment: WebGLShader | null = null;
+    let program: WebGLProgram | null = null;
 
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      const message = gl.getProgramInfoLog(program) ?? "unknown link error";
-      gl.deleteProgram(program);
-      throw new WeatherLayersError(
-        "WEBGL2_UNSUPPORTED",
-        "Unable to link weather shader: " + message
+    try {
+      fragment = this.#compileShader(
+        gl,
+        gl.FRAGMENT_SHADER,
+        FRAGMENT_SHADER
       );
+      program = gl.createProgram();
+      if (program === null) {
+        throw new WeatherLayersError(
+          "WEBGL2_UNSUPPORTED",
+          "Unable to create WebGL program"
+        );
+      }
+      gl.attachShader(program, vertex);
+      gl.attachShader(program, fragment);
+      gl.linkProgram(program);
+
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const message = gl.getProgramInfoLog(program) ?? "unknown link error";
+        throw new WeatherLayersError(
+          "WEBGL2_UNSUPPORTED",
+          "Unable to link weather shader: " + message
+        );
+      }
+      return program;
+    } catch (error) {
+      if (program !== null) {
+        gl.deleteProgram(program);
+      }
+      throw error;
+    } finally {
+      gl.deleteShader(vertex);
+      if (fragment !== null) {
+        gl.deleteShader(fragment);
+      }
     }
-    return program;
   }
 
   #compileShader(
@@ -414,12 +452,138 @@ export class RegularGridWeatherLayer implements WeatherCustomLayer {
   #release(gl: WebGL2RenderingContext): void {
     if (this.#program !== null) gl.deleteProgram(this.#program);
     if (this.#buffer !== null) gl.deleteBuffer(this.#buffer);
+    if (this.#vertexArray !== null) gl.deleteVertexArray(this.#vertexArray);
     if (this.#dataTexture !== null) gl.deleteTexture(this.#dataTexture);
     if (this.#paletteTexture !== null) gl.deleteTexture(this.#paletteTexture);
     this.#program = null;
     this.#buffer = null;
+    this.#vertexArray = null;
     this.#dataTexture = null;
     this.#paletteTexture = null;
+  }
+
+  #withPreservedState(
+    gl: WebGL2RenderingContext,
+    operation: () => void,
+    preservePixelUnpackState = false
+  ): void {
+    const state = this.#captureState(gl);
+    const pixelUnpackState = preservePixelUnpackState
+      ? this.#capturePixelUnpackState(gl)
+      : null;
+    try {
+      operation();
+    } finally {
+      this.#restoreState(gl, state);
+      if (pixelUnpackState !== null) {
+        this.#restorePixelUnpackState(gl, pixelUnpackState);
+      }
+    }
+  }
+
+  #captureState(gl: WebGL2RenderingContext): WeatherGlState {
+    const activeTexture = gl.getParameter(gl.ACTIVE_TEXTURE) as number;
+    gl.activeTexture(gl.TEXTURE0);
+    const texture0 = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture | null;
+    gl.activeTexture(gl.TEXTURE1);
+    const texture1 = gl.getParameter(gl.TEXTURE_BINDING_2D) as WebGLTexture | null;
+    gl.activeTexture(activeTexture);
+
+    return {
+      activeTexture,
+      arrayBuffer: gl.getParameter(gl.ARRAY_BUFFER_BINDING) as WebGLBuffer | null,
+      blendEnabled: gl.isEnabled(gl.BLEND),
+      blendDestinationAlpha: gl.getParameter(gl.BLEND_DST_ALPHA) as number,
+      blendDestinationRgb: gl.getParameter(gl.BLEND_DST_RGB) as number,
+      blendSourceAlpha: gl.getParameter(gl.BLEND_SRC_ALPHA) as number,
+      blendSourceRgb: gl.getParameter(gl.BLEND_SRC_RGB) as number,
+      program: gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null,
+      texture0,
+      texture1,
+      vertexArray: gl.getParameter(
+        gl.VERTEX_ARRAY_BINDING
+      ) as WebGLVertexArrayObject | null
+    };
+  }
+
+  #restoreState(gl: WebGL2RenderingContext, state: WeatherGlState): void {
+    gl.useProgram(state.program);
+    gl.bindVertexArray(state.vertexArray);
+    gl.bindBuffer(gl.ARRAY_BUFFER, state.arrayBuffer);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, state.texture0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, state.texture1);
+    gl.activeTexture(state.activeTexture);
+    gl.blendFuncSeparate(
+      state.blendSourceRgb,
+      state.blendDestinationRgb,
+      state.blendSourceAlpha,
+      state.blendDestinationAlpha
+    );
+    if (state.blendEnabled) {
+      gl.enable(gl.BLEND);
+    } else {
+      gl.disable(gl.BLEND);
+    }
+  }
+
+  #capturePixelUnpackState(
+    gl: WebGL2RenderingContext
+  ): WeatherPixelUnpackState {
+    return {
+      alignment: gl.getParameter(gl.UNPACK_ALIGNMENT) as number,
+      buffer: gl.getParameter(
+        gl.PIXEL_UNPACK_BUFFER_BINDING
+      ) as WebGLBuffer | null,
+      colorSpaceConversion: gl.getParameter(
+        gl.UNPACK_COLORSPACE_CONVERSION_WEBGL
+      ) as number,
+      flipY: gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL) as boolean,
+      imageHeight: gl.getParameter(gl.UNPACK_IMAGE_HEIGHT) as number,
+      premultiplyAlpha: gl.getParameter(
+        gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL
+      ) as boolean,
+      rowLength: gl.getParameter(gl.UNPACK_ROW_LENGTH) as number,
+      skipImages: gl.getParameter(gl.UNPACK_SKIP_IMAGES) as number,
+      skipPixels: gl.getParameter(gl.UNPACK_SKIP_PIXELS) as number,
+      skipRows: gl.getParameter(gl.UNPACK_SKIP_ROWS) as number
+    };
+  }
+
+  #restorePixelUnpackState(
+    gl: WebGL2RenderingContext,
+    state: WeatherPixelUnpackState
+  ): void {
+    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, state.buffer);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, state.alignment);
+    gl.pixelStorei(
+      gl.UNPACK_COLORSPACE_CONVERSION_WEBGL,
+      state.colorSpaceConversion
+    );
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, state.flipY ? 1 : 0);
+    gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, state.imageHeight);
+    gl.pixelStorei(
+      gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,
+      state.premultiplyAlpha ? 1 : 0
+    );
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, state.rowLength);
+    gl.pixelStorei(gl.UNPACK_SKIP_IMAGES, state.skipImages);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, state.skipPixels);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, state.skipRows);
+  }
+
+  #prepareTextureUpload(gl: WebGL2RenderingContext): void {
+    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+    gl.pixelStorei(gl.UNPACK_IMAGE_HEIGHT, 0);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+    gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_IMAGES, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
   }
 
   #mercatorX(longitude: number): number {

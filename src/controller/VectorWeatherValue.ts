@@ -6,5 +6,5 @@ export interface VectorWeatherValue {
   readonly u: number;
   readonly v: number;
   readonly speed: number;
-  readonly directionDegrees: number;
+  readonly directionDegrees: number | null;
 }

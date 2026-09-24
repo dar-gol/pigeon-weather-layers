@@ -91,6 +91,31 @@ describe("sampleWeatherAsset", () => {
     }
   });
 
+  it("does not invent a direction for calm wind", () => {
+    const manifest = createWeatherManifest();
+    const layer = manifest.layers[1];
+    const frame = manifest.frames[0];
+    const codes = new Uint8Array(3 * 3 * 2).fill(128);
+
+    expect(layer).toBeDefined();
+    expect(frame).toBeDefined();
+    if (layer === undefined || frame === undefined) return;
+
+    const value = sampleWeatherAsset(
+      { width: 3, height: 3, channels: 2, codes },
+      manifest,
+      layer,
+      frame,
+      { longitude: 1, latitude: 1 }
+    );
+
+    expect(value?.kind).toBe("vector");
+    if (value?.kind === "vector") {
+      expect(value.speed).toBe(0);
+      expect(value.directionDegrees).toBeNull();
+    }
+  });
+
   it("returns null outside coverage", () => {
     const manifest = createWeatherManifest();
     const layer = manifest.layers[0];

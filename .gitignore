@@ -1,6 +1,8 @@
 node_modules/
 dist/
 coverage/
+playwright-report/
+test-results/
 examples/maplibre-basic/dist/
 examples/maplibre-basic/public/weather/
 *.tgz

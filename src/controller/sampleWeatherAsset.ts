@@ -97,8 +97,11 @@ export function sampleWeatherAsset(
 
   const u = weightedU / validWeight;
   const v = weightedV / validWeight;
+  const speed = Math.hypot(u, v);
   const directionDegrees =
-    ((Math.atan2(-u, -v) * 180) / Math.PI + 360) % 360;
+    speed === 0
+      ? null
+      : ((Math.atan2(-u, -v) * 180) / Math.PI + 360) % 360;
   const result: VectorWeatherValue = {
     kind: "vector",
     layerId: layer.id,
@@ -106,7 +109,7 @@ export function sampleWeatherAsset(
     unit: layer.unit,
     u,
     v,
-    speed: Math.hypot(u, v),
+    speed,
     directionDegrees
   };
   return result;

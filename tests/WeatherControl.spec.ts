@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { WeatherControl } from "../src/control/WeatherControl.js";
 import type { WeatherLayersController } from "../src/controller/WeatherLayersController.js";
 import type { WeatherLayersSnapshot } from "../src/controller/WeatherLayersSnapshot.js";
+import { WeatherLayersError } from "../src/error/WeatherLayersError.js";
 import { createWeatherManifest } from "./fixtures/createWeatherManifest.js";
 
 describe("WeatherControl", () => {
@@ -78,5 +79,53 @@ describe("WeatherControl", () => {
 
     control.onRemove();
     expect(element.isConnected).toBe(false);
+  });
+
+  it("keeps a stale-frame failure visible and rejects non-finite playback", () => {
+    const manifest = createWeatherManifest();
+    const snapshot: WeatherLayersSnapshot = {
+      status: "stale",
+      layerId: "temperature",
+      requestedTime: "latest",
+      resolvedTime: manifest.frames[0]?.validTime ?? null,
+      runId: manifest.run.id,
+      visible: true,
+      opacity: 0.7,
+      attributions: manifest.attributions,
+      error: new WeatherLayersError(
+        "ASSET_FETCH_FAILED",
+        "The latest frame could not be loaded"
+      )
+    };
+    const controller: WeatherLayersController = {
+      attach: vi.fn(),
+      setLayer: vi.fn(),
+      setTime: vi.fn(),
+      setOpacity: vi.fn(),
+      setVisible: vi.fn(),
+      setPalette: vi.fn(),
+      getLegend: vi.fn(),
+      getValueAt: vi.fn(),
+      getManifest: () => manifest,
+      getSnapshot: () => snapshot,
+      subscribe(listener) {
+        listener(snapshot);
+        return () => undefined;
+      },
+      refresh: vi.fn(),
+      destroy: vi.fn()
+    };
+
+    const control = new WeatherControl({ controller });
+    const element = control.onAdd(undefined);
+
+    expect(element.querySelector(".pigeon-weather-control__status")?.textContent)
+      .toBe("Weather data is unavailable");
+    expect(() => new WeatherControl({ controller, playIntervalMs: NaN }))
+      .toThrow(RangeError);
+    expect(() => new WeatherControl({ controller, playIntervalMs: Infinity }))
+      .toThrow(RangeError);
+
+    control.onRemove();
   });
 });

@@ -32,7 +32,7 @@ export async function startExample(): Promise<void> {
 
   const weather = await addWeatherLayers(map, {
     source: "/weather/manifest.json",
-    initialLayer: "temperature",
+    initialLayer: "temperature-2m",
     initialTime: "latest",
     opacity: 0.72,
     placement: "below-labels"
@@ -65,7 +65,9 @@ export async function startExample(): Promise<void> {
     const description =
       value.kind === "scalar"
         ? `${value.value.toFixed(1)} ${value.unit}`
-        : `${value.speed.toFixed(1)} ${value.unit}, ${value.directionDegrees.toFixed(0)}°`;
+        : value.directionDegrees === null
+          ? `${value.speed.toFixed(1)} ${value.unit}, calm`
+          : `${value.speed.toFixed(1)} ${value.unit}, ${value.directionDegrees.toFixed(0)}°`;
     new maplibregl.Popup()
       .setLngLat(event.lngLat)
       .setText(description)

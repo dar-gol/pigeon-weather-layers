@@ -16,10 +16,14 @@ export function createPaletteTextureData(
   for (let index = 0; index < PALETTE_SIZE; index += 1) {
     const value = minimum + (index / (PALETTE_SIZE - 1)) * (maximum - minimum);
     const rightIndex = stops.findIndex((stop) => stop.value >= value);
-    const right =
-      rightIndex < 0 ? stops[stops.length - 1] : stops[rightIndex];
+    const last = stops[stops.length - 1];
+    const right = rightIndex < 0 ? last : stops[rightIndex];
     const left =
-      rightIndex <= 0 ? stops[0] : stops[rightIndex - 1];
+      rightIndex < 0
+        ? last
+        : rightIndex === 0
+          ? right
+          : stops[rightIndex - 1];
 
     if (left === undefined || right === undefined) {
       throw new RangeError("Weather palette contains no usable stops");

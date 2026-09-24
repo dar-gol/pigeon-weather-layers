@@ -42,6 +42,7 @@ export class DefaultWeatherLayersController
   readonly #renderer: RegularGridWeatherLayer;
   readonly #listeners = new Set<WeatherLayersListener>();
   readonly #palettes = new Map<string, WeatherPalette>();
+  readonly #queries = new Set<AbortController>();
 
   #snapshot: WeatherLayersSnapshot;
   #manifest: WeatherManifest | null = null;
@@ -54,7 +55,7 @@ export class DefaultWeatherLayersController
   #attributionControl: WeatherMapControl | null = null;
   #attachAttempted = false;
 
-  readonly #handleStyleLoad = (): void => {
+  readonly #handleMapConfigurationChange = (): void => {
     const map = this.#map;
     if (map === null || this.#snapshot.status === "destroyed") {
       return;
@@ -64,12 +65,32 @@ export class DefaultWeatherLayersController
       if (map.getLayer(this.#renderer.id) === undefined) {
         map.addLayer(this.#renderer, this.#resolveBeforeLayerId(map));
       }
+      if (
+        this.#manifest !== null &&
+        (this.#snapshot.error?.code === "UNSUPPORTED_PROJECTION" ||
+          this.#snapshot.error?.code === "LAYER_NOT_FOUND")
+      ) {
+        this.#setSnapshot({
+          status: this.#manifestStatus(this.#manifest),
+          error: null
+        });
+      }
     } catch (cause) {
-      this.#publishError(this.#asWeatherError(cause), true);
+      if (map.getLayer(this.#renderer.id) !== undefined) {
+        map.removeLayer(this.#renderer.id);
+      }
+      this.#publishError(
+        this.#asWeatherError(cause),
+        this.#currentAsset !== null
+      );
     }
   };
 
   readonly #handleMapRemove = (): void => {
+    const map = this.#map;
+    if (map !== null) {
+      this.#removeMapListeners(map);
+    }
     this.#map = null;
     this.destroy();
   };
@@ -116,25 +137,28 @@ export class DefaultWeatherLayersController
       );
     }
     this.#attachAttempted = true;
+    const operation = this.#startOperation();
     this.#map = map;
     this.#renderer.setRepaint(() => map.triggerRepaint());
-    await this.#waitForStyle(map);
-    this.#assertMercator(map);
-
-    if (map.getLayer(this.#renderer.id) !== undefined) {
-      throw new WeatherLayersError(
-        "MAP_LAYER_ID_CONFLICT",
-        "A map layer already uses id " + this.#renderer.id
-      );
-    }
-
+    map.on("remove", this.#handleMapRemove);
     this.#setSnapshot({ status: "loading", error: null });
-    const operation = this.#startOperation();
 
     try {
+      await this.#waitForStyle(map, operation.signal);
+      this.#throwIfSuperseded(operation);
+      this.#assertMercator(map);
+
+      if (map.getLayer(this.#renderer.id) !== undefined) {
+        throw new WeatherLayersError(
+          "MAP_LAYER_ID_CONFLICT",
+          "A map layer already uses id " + this.#renderer.id
+        );
+      }
+
       const manifest = parseWeatherManifest(
         await this.#source.loadManifest(operation.signal)
       );
+      this.#throwIfSuperseded(operation);
       const layer = this.#resolveLayer(
         manifest,
         this.#options.initialLayer ?? manifest.layers[0]?.id ?? ""
@@ -150,6 +174,7 @@ export class DefaultWeatherLayersController
         operation.signal
       );
       this.#throwIfSuperseded(operation);
+      this.#assertMercator(map);
 
       this.#manifest = manifest;
       this.#currentLayer = layer;
@@ -163,8 +188,8 @@ export class DefaultWeatherLayersController
         bounds: manifest.coverage.bounds
       });
       map.addLayer(this.#renderer, this.#resolveBeforeLayerId(map));
-      map.on("style.load", this.#handleStyleLoad);
-      map.on("remove", this.#handleMapRemove);
+      map.on("style.load", this.#handleMapConfigurationChange);
+      map.on("projectiontransition", this.#handleMapConfigurationChange);
       this.#installAttribution(map, manifest);
       this.#setSnapshot({
         status: this.#manifestStatus(manifest),
@@ -182,6 +207,7 @@ export class DefaultWeatherLayersController
         this.#publishError(error, false);
         throw error;
       }
+      this.#throwIfSuperseded(operation);
       throw cause;
     } finally {
       if (this.#operation === operation) {
@@ -266,25 +292,31 @@ export class DefaultWeatherLayersController
       manifest,
       query.time ?? this.#requireCurrentFrame().validTime
     );
-    const operation = new AbortController();
-    const asset =
-      layer.id === this.#currentLayer?.id &&
-      resolution.frame.timeKey === this.#currentFrame?.timeKey &&
-      this.#currentAsset !== null
-        ? this.#currentAsset
-        : await this.#loadAsset(
-            manifest,
-            layer,
-            resolution.frame,
-            operation.signal
-          );
-    return sampleWeatherAsset(
-      asset,
-      manifest,
-      layer,
-      resolution.frame,
-      query
-    );
+    const queryOperation = new AbortController();
+    this.#queries.add(queryOperation);
+    try {
+      const asset =
+        layer.id === this.#currentLayer?.id &&
+        resolution.frame.timeKey === this.#currentFrame?.timeKey &&
+        this.#currentAsset !== null
+          ? this.#currentAsset
+          : await this.#loadAsset(
+              manifest,
+              layer,
+              resolution.frame,
+              queryOperation.signal
+            );
+      this.#throwIfAborted(queryOperation.signal);
+      return sampleWeatherAsset(
+        asset,
+        manifest,
+        layer,
+        resolution.frame,
+        query
+      );
+    } finally {
+      this.#queries.delete(queryOperation);
+    }
   }
 
   getManifest(): WeatherManifest | null {
@@ -305,7 +337,7 @@ export class DefaultWeatherLayersController
   }
 
   async refresh(): Promise<void> {
-    const previousManifest = this.#requireManifest();
+    this.#requireManifest();
     const layerId = this.#requireCurrentLayer().id;
     const operation = this.#startOperation();
     this.#setSnapshot({ status: "loading", error: null });
@@ -314,33 +346,22 @@ export class DefaultWeatherLayersController
       const manifest = parseWeatherManifest(
         await this.#source.loadManifest(operation.signal)
       );
+      this.#throwIfSuperseded(operation);
       const layer = this.#resolveLayer(manifest, layerId);
       const resolution = resolveWeatherFrame(
         manifest,
         this.#snapshot.requestedTime
       );
 
-      if (
-        manifest.run.id === previousManifest.run.id &&
-        resolution.frame.timeKey === this.#currentFrame?.timeKey
-      ) {
-        this.#manifest = manifest;
-        this.#replaceAttribution(manifest);
-        this.#setSnapshot({
-          status: this.#manifestStatus(manifest),
-          attributions: manifest.attributions,
-          error: null
-        });
-        return;
-      }
-
       const asset = await this.#loadAsset(
         manifest,
         layer,
         resolution.frame,
-        operation.signal
+        operation.signal,
+        true
       );
       this.#throwIfSuperseded(operation);
+      this.#assertAttachedMapMercator();
       this.#manifest = manifest;
       this.#replaceAttribution(manifest);
       this.#currentLayer = layer;
@@ -359,12 +380,14 @@ export class DefaultWeatherLayersController
         attributions: manifest.attributions,
         error: null
       });
+      this.#prefetchNext(manifest, layer, resolution.frame);
     } catch (cause) {
       if (!operation.signal.aborted) {
         const error = this.#asWeatherError(cause);
         this.#publishError(error, true);
         throw error;
       }
+      this.#throwIfSuperseded(operation);
       throw cause;
     } finally {
       if (this.#operation === operation) {
@@ -379,12 +402,15 @@ export class DefaultWeatherLayersController
     }
     this.#operation?.abort();
     this.#prefetch?.abort();
+    for (const query of this.#queries) {
+      query.abort();
+    }
     this.#operation = null;
     this.#prefetch = null;
+    this.#queries.clear();
     const map = this.#map;
     if (map !== null) {
-      map.off("style.load", this.#handleStyleLoad);
-      map.off("remove", this.#handleMapRemove);
+      this.#removeMapListeners(map);
       if (map.getLayer(this.#renderer.id) !== undefined) {
         map.removeLayer(this.#renderer.id);
       }
@@ -397,12 +423,11 @@ export class DefaultWeatherLayersController
     this.#attributionControl = null;
     this.#cache.clear();
     this.#currentAsset = null;
-    this.#listeners.clear();
-    this.#snapshot = {
-      ...this.#snapshot,
-      status: "destroyed",
-      error: null
-    };
+    try {
+      this.#setSnapshot({ status: "destroyed", error: null });
+    } finally {
+      this.#listeners.clear();
+    }
   }
 
   async #activate(
@@ -412,7 +437,6 @@ export class DefaultWeatherLayersController
     time: ResolvedWeatherTime
   ): Promise<void> {
     this.#assertActive();
-    const previousStatus = this.#snapshot.status;
     const operation = this.#startOperation();
     this.#setSnapshot({
       status: "loading",
@@ -428,6 +452,7 @@ export class DefaultWeatherLayersController
         operation.signal
       );
       this.#throwIfSuperseded(operation);
+      this.#assertAttachedMapMercator();
       this.#currentLayer = layer;
       this.#currentFrame = frame;
       this.#currentAsset = asset;
@@ -449,12 +474,10 @@ export class DefaultWeatherLayersController
     } catch (cause) {
       if (!operation.signal.aborted) {
         const error = this.#asWeatherError(cause);
-        this.#publishError(
-          error,
-          previousStatus === "ready" || previousStatus === "stale"
-        );
+        this.#publishError(error, this.#currentAsset !== null);
         throw error;
       }
+      this.#throwIfSuperseded(operation);
       throw cause;
     } finally {
       if (this.#operation === operation) {
@@ -467,15 +490,25 @@ export class DefaultWeatherLayersController
     manifest: WeatherManifest,
     layer: WeatherLayer,
     frame: WeatherFrame,
-    signal: AbortSignal
+    signal: AbortSignal,
+    bypassCache = false
   ): Promise<DecodedWeatherAsset> {
-    const key = [manifest.datasetId, manifest.run.id, layer.id, frame.timeKey]
-      .join("/");
+    const url = resolveAssetUrl(manifest, layer.id, frame.timeKey);
+    const key = JSON.stringify([
+      manifest.datasetId,
+      manifest.run.id,
+      layer.id,
+      frame.timeKey,
+      url,
+      manifest.grid.width,
+      manifest.grid.height,
+      layer.kind === "scalar" ? 1 : 2
+    ]);
     const cached = this.#cache.get(key);
-    if (cached !== undefined) {
+    if (!bypassCache && cached !== undefined) {
+      this.#throwIfAborted(signal);
       return cached;
     }
-    const url = resolveAssetUrl(manifest, layer.id, frame.timeKey);
     const blob = await this.#source.loadAsset(
       {
         url,
@@ -486,12 +519,15 @@ export class DefaultWeatherLayersController
       },
       signal
     );
+    this.#throwIfAborted(signal);
     const asset = await this.#decoder.decode(
       blob,
       layer,
       manifest.grid,
       signal
     );
+    this.#throwIfAborted(signal);
+    this.#assertDecodedAsset(asset, manifest, layer);
     this.#cache.set(key, asset);
     return asset;
   }
@@ -501,6 +537,8 @@ export class DefaultWeatherLayersController
     layer: WeatherLayer,
     frame: WeatherFrame
   ): void {
+    this.#prefetch?.abort();
+    this.#prefetch = null;
     if (this.#options.cache?.prefetchNextFrame === false) {
       return;
     }
@@ -511,7 +549,6 @@ export class DefaultWeatherLayersController
     if (next === undefined) {
       return;
     }
-    this.#prefetch?.abort();
     const prefetch = new AbortController();
     this.#prefetch = prefetch;
     void this.#loadAsset(manifest, layer, next, prefetch.signal)
@@ -580,13 +617,37 @@ export class DefaultWeatherLayersController
   }
 
   #assertPalette(palette: WeatherPalette): void {
+    const [minimum, maximum] = palette.valueRange;
     if (
       palette.stops.length < 2 ||
-      palette.valueRange[0] >= palette.valueRange[1]
+      !Number.isFinite(minimum) ||
+      !Number.isFinite(maximum) ||
+      minimum >= maximum
     ) {
       throw new RangeError(
-        "Weather palette requires two stops and an increasing range"
+        "Weather palette requires two stops and a finite increasing range"
       );
+    }
+
+    let previousValue = Number.NEGATIVE_INFINITY;
+    for (const stop of palette.stops) {
+      if (!Number.isFinite(stop.value) || stop.value < previousValue) {
+        throw new RangeError(
+          "Weather palette stop values must be finite and nondecreasing"
+        );
+      }
+      if (
+        stop.color.length !== 4 ||
+        stop.color.some(
+          (channel) =>
+            !Number.isFinite(channel) || channel < 0 || channel > 255
+        )
+      ) {
+        throw new RangeError(
+          "Weather palette RGBA channels must be finite values between 0 and 255"
+        );
+      }
+      previousValue = stop.value;
     }
   }
 
@@ -604,17 +665,63 @@ export class DefaultWeatherLayersController
     }
   }
 
-  async #waitForStyle(map: WeatherMap): Promise<void> {
+  #assertAttachedMapMercator(): void {
+    const map = this.#map;
+    if (map === null) {
+      throw new WeatherLayersError(
+        "CONTROLLER_DESTROYED",
+        "Weather map is no longer attached"
+      );
+    }
+    this.#assertMercator(map);
+  }
+
+  async #waitForStyle(
+    map: WeatherMap,
+    signal: AbortSignal
+  ): Promise<void> {
     if (map.isStyleLoaded()) {
       return;
     }
-    await new Promise<void>((resolve) => {
-      map.once("load", resolve);
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = (): void => {
+        map.off("style.load", handleStyleLoad);
+        map.off("remove", handleMapRemove);
+        signal.removeEventListener("abort", handleAbort);
+      };
+      const handleStyleLoad = (): void => {
+        cleanup();
+        resolve();
+      };
+      const handleMapRemove = (): void => {
+        cleanup();
+        this.#handleMapRemove();
+        reject(
+          signal.reason ??
+            new DOMException("Weather map was removed", "AbortError")
+        );
+      };
+      const handleAbort = (): void => {
+        cleanup();
+        reject(
+          signal.reason ??
+            new DOMException("Weather request was aborted", "AbortError")
+        );
+      };
+
+      map.on("style.load", handleStyleLoad);
+      map.on("remove", handleMapRemove);
+      signal.addEventListener("abort", handleAbort, { once: true });
+      if (signal.aborted) {
+        handleAbort();
+      }
     });
   }
 
   #startOperation(): AbortController {
     this.#operation?.abort();
+    this.#prefetch?.abort();
+    this.#prefetch = null;
     const operation = new AbortController();
     this.#operation = operation;
     return operation;
@@ -627,6 +734,43 @@ export class DefaultWeatherLayersController
         new DOMException("Weather request was superseded", "AbortError")
       );
     }
+  }
+
+  #throwIfAborted(signal: AbortSignal): void {
+    if (signal.aborted) {
+      throw (
+        signal.reason ??
+        new DOMException("Weather request was aborted", "AbortError")
+      );
+    }
+  }
+
+  #assertDecodedAsset(
+    asset: DecodedWeatherAsset,
+    manifest: WeatherManifest,
+    layer: WeatherLayer
+  ): void {
+    const expectedChannels = layer.kind === "scalar" ? 1 : 2;
+    const expectedLength =
+      manifest.grid.width * manifest.grid.height * expectedChannels;
+    if (
+      asset.width !== manifest.grid.width ||
+      asset.height !== manifest.grid.height ||
+      asset.channels !== expectedChannels ||
+      !(asset.codes instanceof Uint8Array) ||
+      asset.codes.byteLength !== expectedLength
+    ) {
+      throw new WeatherLayersError(
+        "ASSET_DECODE_FAILED",
+        "Decoded weather asset does not match the manifest grid and layer"
+      );
+    }
+  }
+
+  #removeMapListeners(map: WeatherMap): void {
+    map.off("style.load", this.#handleMapConfigurationChange);
+    map.off("projectiontransition", this.#handleMapConfigurationChange);
+    map.off("remove", this.#handleMapRemove);
   }
 
   #publishError(error: WeatherLayersError, preserveFrame: boolean): void {

@@ -1,6 +1,5 @@
 export { addWeatherLayers } from "./controller/addWeatherLayers.js";
 export { createWeatherLayers } from "./controller/createWeatherLayers.js";
-export { DefaultWeatherLayersController } from "./controller/DefaultWeatherLayersController.js";
 export type { ResolvedWeatherTime } from "./controller/ResolvedWeatherTime.js";
 export type { ScalarWeatherValue } from "./controller/ScalarWeatherValue.js";
 export type { VectorWeatherValue } from "./controller/VectorWeatherValue.js";
@@ -34,9 +33,7 @@ export type { WeatherRun } from "./manifest/WeatherRun.js";
 export type { WeatherTimeSelection } from "./manifest/WeatherTimeSelection.js";
 export { parseWeatherManifest } from "./manifest/parseWeatherManifest.js";
 export { weatherManifestSchema } from "./manifest/weatherManifestSchema.js";
-export { BrowserWeatherAssetDecoder } from "./rendering/BrowserWeatherAssetDecoder.js";
-export type { DecodedWeatherAsset } from "./rendering/DecodedWeatherAsset.js";
-export type { WeatherAssetDecoder } from "./rendering/WeatherAssetDecoder.js";
+export type { WeatherMap } from "./map/WeatherMap.js";
 export { createHttpWeatherDataSource } from "./source/createHttpWeatherDataSource.js";
 export { HttpWeatherDataSource } from "./source/HttpWeatherDataSource.js";
 export type { HttpWeatherDataSourceOptions } from "./source/HttpWeatherDataSourceOptions.js";

@@ -7,7 +7,7 @@ const height = 101;
 const datasetId = "synthetic-europe";
 const frameHours = [0, 3, 6];
 const frameKeys = frameHours.map(createFrameKey);
-const layerIds = ["temperature", "precipitation", "wind"];
+const layerIds = ["temperature-2m", "precipitation-rate", "wind-10m"];
 const generatedAt = new Date();
 const issuedAt = new Date(generatedAt);
 issuedAt.setUTCMinutes(0, 0, 0);
@@ -68,12 +68,12 @@ function createPng(layerId, frameIndex) {
     for (let x = 0; x < width; x += 1) {
       const offset = (y * width + x) * 4;
       const value = valueAt(x, y, frameIndex);
-      if (layerId === "temperature") {
+      if (layerId === "temperature-2m") {
         const code = encodeLinear(value.temperature, 250, 310);
         png.data[offset] = code;
         png.data[offset + 1] = code;
         png.data[offset + 2] = code;
-      } else if (layerId === "precipitation") {
+      } else if (layerId === "precipitation-rate") {
         const code = encodeSqrt(value.precipitation, 0, 20);
         png.data[offset] = code;
         png.data[offset + 1] = code;
@@ -87,7 +87,7 @@ function createPng(layerId, frameIndex) {
     }
   }
   return PNG.sync.write(png, {
-    colorType: layerId === "wind" ? 2 : 0
+    colorType: layerId === "wind-10m" ? 2 : 0
   });
 }
 
@@ -144,7 +144,7 @@ const manifest = {
   })),
   layers: [
     {
-      id: "temperature",
+      id: "temperature-2m",
       kind: "scalar",
       sourceParameters: ["synthetic-temperature"],
       unit: "K",
@@ -159,11 +159,11 @@ const manifest = {
       }
     },
     {
-      id: "precipitation",
+      id: "precipitation-rate",
       kind: "scalar",
       sourceParameters: ["synthetic-precipitation"],
-      unit: "mm",
-      aggregation: "three-hour total",
+      unit: "mm/h",
+      aggregation: "instantaneous",
       temporalInterpolation: "nearest",
       encoding: {
         type: "scalar-png-r8-sqrt-v1",
@@ -174,7 +174,7 @@ const manifest = {
       }
     },
     {
-      id: "wind",
+      id: "wind-10m",
       kind: "vector",
       sourceParameters: ["synthetic-u", "synthetic-v"],
       unit: "m/s",

@@ -29,6 +29,8 @@
     "LICENSE",
     "NOTICE",
     "DATA_SOURCES.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
     "THIRD_PARTY_NOTICES.md"
   ],
   "main": "./dist/index.js",
@@ -52,6 +54,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:browser": "playwright test",
+    "test:browser:serve": "vite --host 127.0.0.1 --port 4174",
+    "test:package": "node ./scripts/test-packed-consumer.mjs",
     "example:generate": "node ./scripts/generate-example-data.mjs",
     "example:dev": "npm run example:generate && vite ./examples/maplibre-basic",
     "example:open": "npm run example:generate && vite ./examples/maplibre-basic --open",
@@ -78,6 +83,7 @@
     }
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/node": "^24.0.0",
     "@types/pngjs": "6.0.5",
     "jsdom": "26.1.0",

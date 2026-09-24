@@ -1,3 +1,13 @@
+import {
+  MAX_WEATHER_GRID_DIMENSION,
+  WEB_MERCATOR_MAX_LATITUDE
+} from "./WeatherManifestLimits.js";
+import { STRICT_UTC_TIMESTAMP_PATTERN } from "./isStrictUtcTimestamp.js";
+
+const MAX_IDENTIFIER_LENGTH = 128;
+const MAX_TEXT_LENGTH = 512;
+const MAX_URL_LENGTH = 2_048;
+
 export const weatherManifestSchema = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   $id: "https://pigeonmap.com/schemas/weather-manifest-v1.schema.json",
@@ -19,8 +29,16 @@ export const weatherManifestSchema = {
   ],
   properties: {
     schemaVersion: { const: 1 },
-    datasetId: { type: "string", minLength: 1 },
-    sourcePolicyVersion: { type: "string", minLength: 1 },
+    datasetId: {
+      type: "string",
+      minLength: 1,
+      maxLength: MAX_IDENTIFIER_LENGTH
+    },
+    sourcePolicyVersion: {
+      type: "string",
+      minLength: 1,
+      maxLength: MAX_IDENTIFIER_LENGTH
+    },
     run: {
       type: "object",
       additionalProperties: false,
@@ -33,12 +51,16 @@ export const weatherManifestSchema = {
         "availableUntil"
       ],
       properties: {
-        id: { type: "string", minLength: 1 },
-        model: { type: "string", minLength: 1 },
-        issuedAt: { type: "string", format: "date-time", pattern: "Z$" },
-        generatedAt: { type: "string", format: "date-time", pattern: "Z$" },
-        staleAfter: { type: "string", format: "date-time", pattern: "Z$" },
-        availableUntil: { type: "string", format: "date-time", pattern: "Z$" }
+        id: {
+          type: "string",
+          minLength: 1,
+          maxLength: MAX_IDENTIFIER_LENGTH
+        },
+        model: { type: "string", minLength: 1, maxLength: MAX_TEXT_LENGTH },
+        issuedAt: { type: "string", pattern: STRICT_UTC_TIMESTAMP_PATTERN },
+        generatedAt: { type: "string", pattern: STRICT_UTC_TIMESTAMP_PATTERN },
+        staleAfter: { type: "string", pattern: STRICT_UTC_TIMESTAMP_PATTERN },
+        availableUntil: { type: "string", pattern: STRICT_UTC_TIMESTAMP_PATTERN }
       }
     },
     coverage: {
@@ -50,7 +72,21 @@ export const weatherManifestSchema = {
           type: "array",
           minItems: 4,
           maxItems: 4,
-          items: { type: "number" }
+          prefixItems: [
+            { type: "number", minimum: -180, maximum: 180 },
+            {
+              type: "number",
+              minimum: -WEB_MERCATOR_MAX_LATITUDE,
+              maximum: WEB_MERCATOR_MAX_LATITUDE
+            },
+            { type: "number", minimum: -180, maximum: 180 },
+            {
+              type: "number",
+              minimum: -WEB_MERCATOR_MAX_LATITUDE,
+              maximum: WEB_MERCATOR_MAX_LATITUDE
+            }
+          ],
+          items: false
         },
         crs: { const: "EPSG:4326" }
       }
@@ -67,8 +103,16 @@ export const weatherManifestSchema = {
         "yDirection"
       ],
       properties: {
-        width: { type: "integer", minimum: 2 },
-        height: { type: "integer", minimum: 2 },
+        width: {
+          type: "integer",
+          minimum: 2,
+          maximum: MAX_WEATHER_GRID_DIMENSION
+        },
+        height: {
+          type: "integer",
+          minimum: 2,
+          maximum: MAX_WEATHER_GRID_DIMENSION
+        },
         longitudeStep: { type: "number", exclusiveMinimum: 0 },
         latitudeStep: { type: "number", exclusiveMinimum: 0 },
         xDirection: { const: "west-to-east" },
@@ -84,6 +128,7 @@ export const weatherManifestSchema = {
         assetTemplate: {
           type: "string",
           minLength: 1,
+          maxLength: MAX_URL_LENGTH,
           allOf: [
             { pattern: "\\{datasetId\\}" },
             { pattern: "\\{runId\\}" },
@@ -106,11 +151,13 @@ export const weatherManifestSchema = {
     frames: {
       type: "array",
       minItems: 1,
+      maxItems: 512,
       items: { $ref: "#/$defs/frame" }
     },
     layers: {
       type: "array",
       minItems: 1,
+      maxItems: 64,
       items: {
         oneOf: [
           { $ref: "#/$defs/scalarLayer" },
@@ -121,6 +168,7 @@ export const weatherManifestSchema = {
     attributions: {
       type: "array",
       minItems: 1,
+      maxItems: 16,
       items: { $ref: "#/$defs/attribution" }
     }
   },
@@ -130,11 +178,21 @@ export const weatherManifestSchema = {
       additionalProperties: false,
       required: ["timeKey", "leadHour", "validTime"],
       properties: {
-        timeKey: { type: "string", minLength: 1 },
+        timeKey: {
+          type: "string",
+          minLength: 1,
+          maxLength: MAX_IDENTIFIER_LENGTH
+        },
         leadHour: { type: "number", minimum: 0 },
-        validTime: { type: "string", format: "date-time", pattern: "Z$" },
-        intervalStart: { type: "string", format: "date-time", pattern: "Z$" },
-        intervalEnd: { type: "string", format: "date-time", pattern: "Z$" }
+        validTime: { type: "string", pattern: STRICT_UTC_TIMESTAMP_PATTERN },
+        intervalStart: {
+          type: "string",
+          pattern: STRICT_UTC_TIMESTAMP_PATTERN
+        },
+        intervalEnd: {
+          type: "string",
+          pattern: STRICT_UTC_TIMESTAMP_PATTERN
+        }
       }
     },
     scalarLayer: {
@@ -150,16 +208,25 @@ export const weatherManifestSchema = {
         "encoding"
       ],
       properties: {
-        id: { type: "string", minLength: 1 },
+        id: {
+          type: "string",
+          minLength: 1,
+          maxLength: MAX_IDENTIFIER_LENGTH
+        },
         kind: { const: "scalar" },
         sourceParameters: {
           type: "array",
           minItems: 1,
+          maxItems: 16,
           uniqueItems: true,
-          items: { type: "string", minLength: 1 }
+          items: {
+            type: "string",
+            minLength: 1,
+            maxLength: MAX_IDENTIFIER_LENGTH
+          }
         },
-        unit: { type: "string", minLength: 1 },
-        aggregation: { type: "string", minLength: 1 },
+        unit: { type: "string", minLength: 1, maxLength: 32 },
+        aggregation: { type: "string", minLength: 1, maxLength: 64 },
         temporalInterpolation: { const: "nearest" },
         encoding: {
           oneOf: [
@@ -182,17 +249,25 @@ export const weatherManifestSchema = {
         "encoding"
       ],
       properties: {
-        id: { type: "string", minLength: 1 },
+        id: {
+          type: "string",
+          minLength: 1,
+          maxLength: MAX_IDENTIFIER_LENGTH
+        },
         kind: { const: "vector" },
         sourceParameters: {
           type: "array",
           minItems: 2,
           maxItems: 2,
           uniqueItems: true,
-          items: { type: "string", minLength: 1 }
+          items: {
+            type: "string",
+            minLength: 1,
+            maxLength: MAX_IDENTIFIER_LENGTH
+          }
         },
-        unit: { type: "string", minLength: 1 },
-        aggregation: { type: "string", minLength: 1 },
+        unit: { type: "string", minLength: 1, maxLength: 32 },
+        aggregation: { type: "string", minLength: 1, maxLength: 64 },
         temporalInterpolation: { const: "nearest" },
         encoding: { $ref: "#/$defs/vectorEncoding" }
       }
@@ -273,16 +348,31 @@ export const weatherManifestSchema = {
         "modifications"
       ],
       properties: {
-        label: { type: "string", minLength: 1 },
-        sourceUrl: { type: "string", format: "uri", pattern: "^https://" },
-        termsUrl: { type: "string", format: "uri", pattern: "^https://" },
-        license: { type: "string", minLength: 1 },
+        label: { type: "string", minLength: 1, maxLength: MAX_TEXT_LENGTH },
+        sourceUrl: {
+          type: "string",
+          maxLength: MAX_URL_LENGTH,
+          format: "uri",
+          pattern: "^https://"
+        },
+        termsUrl: {
+          type: "string",
+          maxLength: MAX_URL_LENGTH,
+          format: "uri",
+          pattern: "^https://"
+        },
+        license: {
+          type: "string",
+          minLength: 1,
+          maxLength: MAX_IDENTIFIER_LENGTH
+        },
         modified: { type: "boolean" },
         modifications: {
           type: "array",
           minItems: 1,
+          maxItems: 32,
           uniqueItems: true,
-          items: { type: "string", minLength: 1 }
+          items: { type: "string", minLength: 1, maxLength: MAX_TEXT_LENGTH }
         }
       }
     }

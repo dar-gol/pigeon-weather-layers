@@ -3,6 +3,7 @@ import type { WeatherGrid } from "../manifest/WeatherGrid.js";
 import type { WeatherLayer } from "../manifest/WeatherLayer.js";
 import type { DecodedWeatherAsset } from "./DecodedWeatherAsset.js";
 import type { WeatherAssetDecoder } from "./WeatherAssetDecoder.js";
+import { validateWeatherPng } from "./validateWeatherPng.js";
 
 export class BrowserWeatherAssetDecoder implements WeatherAssetDecoder {
   async decode(
@@ -12,6 +13,7 @@ export class BrowserWeatherAssetDecoder implements WeatherAssetDecoder {
     signal: AbortSignal
   ): Promise<DecodedWeatherAsset> {
     this.#throwIfAborted(signal);
+    await validateWeatherPng(blob, layer, grid, signal);
 
     if (typeof createImageBitmap !== "function") {
       throw new WeatherLayersError(

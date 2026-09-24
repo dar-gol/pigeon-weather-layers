@@ -9,6 +9,11 @@ export class WeatherAssetCache {
   #bytes = 0;
 
   constructor(maxBytes: number) {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+      throw new RangeError(
+        "Weather asset cache maxBytes must be a positive safe integer"
+      );
+    }
     this.#maxBytes = maxBytes;
   }
 

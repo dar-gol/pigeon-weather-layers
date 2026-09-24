@@ -13,9 +13,14 @@ export interface WeatherMap {
   };
   getProjection(): { readonly type?: unknown } | undefined;
   isStyleLoaded(): boolean | void;
-  once(type: "load", listener: () => void): unknown;
-  on(type: "style.load" | "remove", listener: () => void): unknown;
-  off(type: "style.load" | "remove", listener: () => void): unknown;
+  on(
+    type: "style.load" | "projectiontransition" | "remove",
+    listener: () => void
+  ): unknown;
+  off(
+    type: "style.load" | "projectiontransition" | "remove",
+    listener: () => void
+  ): unknown;
   triggerRepaint(): void;
   addControl(
     control: WeatherMapControl,

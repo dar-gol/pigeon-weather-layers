@@ -1,6 +1,10 @@
 import type { WeatherLayer } from "../manifest/WeatherLayer.js";
 import type { WeatherPalette } from "../controller/WeatherPalette.js";
 
+const KELVIN_OFFSET = 273.15;
+const CELSIUS_UNITS = new Set(["°C", "degC"]);
+const CLOUD_COVER_UNITS = new Set(["%", "percent"]);
+
 const TEMPERATURE_STOPS = [
   { value: -60, color: [58, 28, 113, 255] },
   { value: -20, color: [44, 123, 182, 255] },
@@ -48,7 +52,11 @@ const WIND_STOPS = [
 export function getDefaultWeatherPalette(
   layer: WeatherLayer
 ): WeatherPalette {
-  if (layer.kind === "vector") {
+  if (
+    layer.kind === "vector" &&
+    layer.id === "wind-10m" &&
+    layer.unit.trim() === "m/s"
+  ) {
     return {
       id: "wind-speed",
       valueRange: [0, 40],
@@ -56,15 +64,38 @@ export function getDefaultWeatherPalette(
     };
   }
 
-  if (layer.id === "temperature-2m") {
+  if (
+    layer.kind === "scalar" &&
+    layer.id === "temperature-2m" &&
+    CELSIUS_UNITS.has(layer.unit.trim())
+  ) {
     return {
-      id: "temperature",
+      id: "temperature-celsius",
       valueRange: layer.encoding.valueRange,
       stops: TEMPERATURE_STOPS
     };
   }
 
-  if (layer.id === "precipitation-rate") {
+  if (
+    layer.kind === "scalar" &&
+    layer.id === "temperature-2m" &&
+    layer.unit.trim() === "K"
+  ) {
+    return {
+      id: "temperature-kelvin",
+      valueRange: layer.encoding.valueRange,
+      stops: TEMPERATURE_STOPS.map((stop) => ({
+        value: stop.value + KELVIN_OFFSET,
+        color: stop.color
+      }))
+    };
+  }
+
+  if (
+    layer.kind === "scalar" &&
+    layer.id === "precipitation-rate" &&
+    layer.unit.trim() === "mm/h"
+  ) {
     return {
       id: "precipitation",
       valueRange: layer.encoding.valueRange,
@@ -72,7 +103,11 @@ export function getDefaultWeatherPalette(
     };
   }
 
-  if (layer.id === "cloud-cover") {
+  if (
+    layer.kind === "scalar" &&
+    layer.id === "cloud-cover" &&
+    CLOUD_COVER_UNITS.has(layer.unit.trim())
+  ) {
     return {
       id: "cloud-cover",
       valueRange: layer.encoding.valueRange,
@@ -80,7 +115,11 @@ export function getDefaultWeatherPalette(
     };
   }
 
-  if (layer.id === "pressure-msl") {
+  if (
+    layer.kind === "scalar" &&
+    layer.id === "pressure-msl" &&
+    layer.unit.trim() === "hPa"
+  ) {
     return {
       id: "pressure",
       valueRange: layer.encoding.valueRange,
@@ -88,16 +127,28 @@ export function getDefaultWeatherPalette(
     };
   }
 
+  const valueRange: readonly [number, number] =
+    layer.kind === "scalar"
+      ? layer.encoding.valueRange
+      : [
+          0,
+          Math.SQRT2 *
+            Math.max(
+              Math.abs(layer.encoding.componentRange[0]),
+              Math.abs(layer.encoding.componentRange[1])
+            )
+        ];
+
   return {
     id: "default",
-    valueRange: layer.encoding.valueRange,
+    valueRange,
     stops: [
       {
-        value: layer.encoding.valueRange[0],
+        value: valueRange[0],
         color: [38, 130, 142, 180]
       },
       {
-        value: layer.encoding.valueRange[1],
+        value: valueRange[1],
         color: [253, 231, 37, 240]
       }
     ]

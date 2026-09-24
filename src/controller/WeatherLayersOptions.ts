@@ -13,7 +13,6 @@ export interface WeatherLayersOptions {
     | { readonly beforeLayerId: string };
   readonly idPrefix?: string;
   readonly attribution?: "auto" | "manual";
-  readonly reducedMotion?: "system" | "always" | "never";
   readonly cache?: {
     readonly maxBytes?: number;
     readonly prefetchNextFrame?: boolean;

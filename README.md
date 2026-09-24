@@ -53,20 +53,26 @@ const map = new maplibregl.Map({
 
 const weather = await addWeatherLayers(map, {
   source: "https://weather.example.com/manifest.json",
-  initialLayer: "temperature",
+  initialLayer: "temperature-2m",
   initialTime: "latest",
   opacity: 0.72,
   placement: "below-labels"
 });
 
 await weather.setTime("2026-09-24T12:00:00Z");
-await weather.setLayer("wind");
+await weather.setLayer("wind-10m");
 ```
 
 `addWeatherLayers()` waits for the map style, loads and validates the
 manifest, decodes the selected PNG and attaches the custom layer. Use
 `createWeatherLayers(options)` when construction and `attach(map)` need to be
 separate.
+
+The stable entry points are the two factory functions and the exported
+controller, manifest, source and `WeatherMap` contracts. Renderer, browser
+decoder and default-controller classes are implementation details; keeping
+them out of the package root lets their internals evolve without breaking
+applications.
 
 ## MapTiler SDK
 
@@ -143,7 +149,7 @@ weather.setVisible(false);
 const value = await weather.getValueAt({
   longitude: 19.94,
   latitude: 50.06,
-  layerId: "temperature"
+  layerId: "temperature-2m"
 });
 
 unsubscribe();
@@ -163,6 +169,14 @@ and forecast frame. The manifest declares:
 - scalar or vector encodings and physical units;
 - an asset URL template;
 - source attribution and modification notices.
+
+Version 1 accepts only UTC RFC 3339 timestamps (`...Z`) and coverage within
+Web Mercator (`longitude -180..180`, `latitude about -85.051129..85.051129`).
+Frame `validTime` must equal `run.issuedAt + leadHour`. PNG dimensions and
+format are checked against the manifest before browser decoding, and bounded
+grid/asset limits prevent an untrusted source from causing unbounded memory
+allocation. The built-in HTTP source rejects redirects and limits manifests
+to 1 MiB and encoded PNG assets to 16 MiB before buffering them.
 
 The published schema is available as:
 
@@ -225,6 +239,8 @@ separate deployment concern and is not bundled into browser applications.
 - Data must be a regular EPSG:4326 grid described by manifest version 1.
 - Temporal interpolation is nearest-frame; spatial sampling is bilinear.
 - Cross-origin assets require normal browser CORS headers.
+- Calm vector samples return `directionDegrees: null`, because wind direction
+  is undefined when speed is zero.
 
 ## Local development
 

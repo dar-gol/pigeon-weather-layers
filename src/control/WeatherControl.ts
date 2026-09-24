@@ -40,7 +40,7 @@ export class WeatherControl implements WeatherMapControl {
     this.#playIntervalMs = options.playIntervalMs ?? 900;
     this.#className = options.className;
 
-    if (this.#playIntervalMs < 100) {
+    if (!Number.isFinite(this.#playIntervalMs) || this.#playIntervalMs < 100) {
       throw new RangeError("Weather control playIntervalMs must be at least 100");
     }
   }
@@ -190,7 +190,7 @@ export class WeatherControl implements WeatherMapControl {
       this.#status.textContent =
         snapshot.status === "loading"
           ? this.#messages.loading
-          : snapshot.status === "error"
+          : snapshot.error !== null
             ? this.#messages.error
             : "";
     }
