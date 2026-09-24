@@ -1,0 +1,80 @@
+.pigeon-weather-control {
+  box-sizing: border-box;
+  display: grid;
+  gap: 0.75rem;
+  min-width: 15rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: rgb(255 255 255 / 94%);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+  color: #17212b;
+  font: 13px/1.35 system-ui, sans-serif;
+}
+
+.pigeon-weather-control *,
+.pigeon-weather-control *::before,
+.pigeon-weather-control *::after {
+  box-sizing: inherit;
+}
+
+.pigeon-weather-control__field {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 600;
+}
+
+.pigeon-weather-control select,
+.pigeon-weather-control input,
+.pigeon-weather-control button {
+  font: inherit;
+}
+
+.pigeon-weather-control input[type="range"] {
+  width: 100%;
+}
+
+.pigeon-weather-control output {
+  min-height: 1.2em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+.pigeon-weather-control__play {
+  min-height: 2rem;
+  border: 1px solid #9aa8b6;
+  border-radius: 0.35rem;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pigeon-weather-control__play:hover {
+  background: #edf4fa;
+}
+
+.pigeon-weather-control :focus-visible {
+  outline: 3px solid #2374ab;
+  outline-offset: 2px;
+}
+
+.pigeon-weather-control__status {
+  min-height: 1.2em;
+  margin: 0;
+  color: #9b2c2c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pigeon-weather-control {
+    background: rgb(23 33 43 / 94%);
+    color: #f5f7fa;
+  }
+
+  .pigeon-weather-control__play {
+    border-color: #63778a;
+    background: #263746;
+  }
+
+  .pigeon-weather-control__play:hover {
+    background: #31495c;
+  }
+}

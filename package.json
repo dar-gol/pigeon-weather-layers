@@ -1,0 +1,89 @@
+{
+  "name": "@pigeonmap/weather-layers",
+  "version": "0.1.0",
+  "description": "WebGL2 weather overlays for MapLibre-compatible maps",
+  "keywords": [
+    "maplibre",
+    "maptiler",
+    "weather",
+    "webgl",
+    "forecast",
+    "map"
+  ],
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Dariusz Golomski",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dar-gol/pigeon-weather-layers.git"
+  },
+  "homepage": "https://github.com/dar-gol/pigeon-weather-layers#readme",
+  "bugs": "https://github.com/dar-gol/pigeon-weather-layers/issues",
+  "private": false,
+  "sideEffects": [
+    "./dist/control.css"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "DATA_SOURCES.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./control": {
+      "types": "./dist/control/index.d.ts",
+      "import": "./dist/control/index.js"
+    },
+    "./control.css": "./dist/control.css",
+    "./weather-manifest-v1.schema.json": "./dist/weather-manifest-v1.schema.json"
+  },
+  "scripts": {
+    "clean": "node ./scripts/clean.mjs",
+    "build": "npm run clean && tsc -p tsconfig.build.json && node ./scripts/write-schema.mjs && node ./scripts/copy-control-css.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "example:generate": "node ./scripts/generate-example-data.mjs",
+    "example:dev": "npm run example:generate && vite ./examples/maplibre-basic",
+    "example:build": "npm run example:generate && vite build ./examples/maplibre-basic",
+    "check": "npm run typecheck && npm test && npm run build && npm run example:build",
+    "prepack": "npm run build"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "ajv": "8.20.0"
+  },
+  "peerDependencies": {
+    "maplibre-gl": "^5.0.0 || ^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "maplibre-gl": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pngjs": "6.0.5",
+    "jsdom": "30.1.1",
+    "maplibre-gl": "6.11.1",
+    "pngjs": "7.0.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.0",
+    "vitest": "5.0.1"
+  }
+}

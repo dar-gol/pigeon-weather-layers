@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+examples/maplibre-basic/dist/
+examples/maplibre-basic/public/weather/
+*.tgz
+.DS_Store
