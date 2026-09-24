@@ -54,6 +54,7 @@
     "test:watch": "vitest",
     "example:generate": "node ./scripts/generate-example-data.mjs",
     "example:dev": "npm run example:generate && vite ./examples/maplibre-basic",
+    "example:open": "npm run example:generate && vite ./examples/maplibre-basic --open",
     "example:build": "npm run example:generate && vite build ./examples/maplibre-basic",
     "check": "npm run typecheck && npm test && npm run build && npm run example:build",
     "prepack": "npm run build"

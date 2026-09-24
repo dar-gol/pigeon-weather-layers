@@ -224,13 +224,18 @@ separate deployment concern and is not bundled into browser applications.
 npm install
 npm run check
 npm run example:build
-npm run example:dev
+npm run example:open
 ```
 
-For a local example, run `npm run example:generate` and then:
+The last command generates synthetic data, starts a local HTTP server and
+opens the example. Do not open `examples/maplibre-basic/index.html` directly:
+`file://` pages cannot load the TypeScript modules, weather assets or MapLibre
+worker.
+
+To start the server without opening a browser, run:
 
 ```bash
-npx vite ./examples/maplibre-basic
+npm run example:dev
 ```
 
 ## License
