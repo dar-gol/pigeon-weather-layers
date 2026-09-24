@@ -109,14 +109,22 @@ map.addControl(
       opacity: "Przezroczystość",
       play: "Odtwórz prognozę",
       pause: "Zatrzymaj prognozę"
-    }
+    },
+    formatTime: (frame) =>
+      new Intl.DateTimeFormat("pl-PL", {
+        dateStyle: "short",
+        timeStyle: "short",
+        timeZone: "Europe/Warsaw"
+      }).format(new Date(frame.validTime))
   }),
   "top-right"
 );
 ```
 
 The control includes layer selection, forecast time, opacity and playback.
-All visible labels can be translated by the host application.
+All visible labels can be translated by the host application. By default the
+time includes the browser's local time-zone abbreviation; `formatTime` can
+provide application-specific formatting or label non-forecast demo frames.
 
 ## Application UI
 

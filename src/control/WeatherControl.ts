@@ -1,5 +1,6 @@
 import type { WeatherLayersSnapshot } from "../controller/WeatherLayersSnapshot.js";
 import type { WeatherMapControl } from "../map/WeatherMapControl.js";
+import type { WeatherFrame } from "../manifest/WeatherFrame.js";
 import type { WeatherControlMessages } from "./WeatherControlMessages.js";
 import type { WeatherControlOptions } from "./WeatherControlOptions.js";
 
@@ -16,6 +17,7 @@ const DEFAULT_MESSAGES: WeatherControlMessages = {
 export class WeatherControl implements WeatherMapControl {
   readonly #controller: WeatherControlOptions["controller"];
   readonly #messages: WeatherControlMessages;
+  readonly #formatTime: (frame: WeatherFrame) => string;
   readonly #playIntervalMs: number;
   readonly #className: string | undefined;
 
@@ -34,6 +36,7 @@ export class WeatherControl implements WeatherMapControl {
   constructor(options: WeatherControlOptions) {
     this.#controller = options.controller;
     this.#messages = { ...DEFAULT_MESSAGES, ...options.messages };
+    this.#formatTime = options.formatTime ?? formatWeatherTime;
     this.#playIntervalMs = options.playIntervalMs ?? 900;
     this.#className = options.className;
 
@@ -283,12 +286,7 @@ export class WeatherControl implements WeatherMapControl {
     }
     const frame = this.#frameAt(index);
     this.#timeOutput.textContent =
-      frame === undefined
-        ? ""
-        : new Intl.DateTimeFormat(undefined, {
-            dateStyle: "short",
-            timeStyle: "short"
-          }).format(new Date(frame.validTime));
+      frame === undefined ? "" : this.#formatTime(frame);
   }
 
   #frameAt(index: number) {
@@ -298,4 +296,15 @@ export class WeatherControl implements WeatherMapControl {
   readonly #stopPropagation = (event: Event): void => {
     event.stopPropagation();
   };
+}
+
+function formatWeatherTime(frame: WeatherFrame): string {
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short"
+  }).format(new Date(frame.validTime));
 }

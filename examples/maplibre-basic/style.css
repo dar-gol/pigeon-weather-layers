@@ -9,3 +9,32 @@ body,
 body {
   overflow: hidden;
 }
+
+.demo-notice {
+  position: fixed;
+  z-index: 2;
+  top: 1rem;
+  left: 1rem;
+  display: grid;
+  gap: 0.25rem;
+  max-width: min(24rem, calc(100vw - 3rem));
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgb(23 56 79 / 30%);
+  border-radius: 0.5rem;
+  background: rgb(255 255 255 / 88%);
+  color: #17384f;
+  font: 14px/1.35 system-ui, sans-serif;
+  box-shadow: 0 0.25rem 1rem rgb(23 56 79 / 16%);
+  pointer-events: none;
+}
+
+.demo-notice[hidden] {
+  display: none;
+}
+
+@media (max-width: 44rem) {
+  .demo-notice {
+    inset: auto 1rem 3rem;
+    max-width: none;
+  }
+}

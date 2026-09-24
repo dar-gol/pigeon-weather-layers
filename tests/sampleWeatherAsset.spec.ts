@@ -30,6 +30,38 @@ describe("sampleWeatherAsset", () => {
     }
   });
 
+  it("maps the first asset row to south and the last row to north", () => {
+    const manifest = createWeatherManifest();
+    const layer = manifest.layers[0];
+    const frame = manifest.frames[0];
+    const asset: DecodedWeatherAsset = {
+      width: 3,
+      height: 3,
+      channels: 1,
+      codes: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9])
+    };
+
+    expect(layer).toBeDefined();
+    expect(frame).toBeDefined();
+    if (layer === undefined || frame === undefined) return;
+
+    const southWest = sampleWeatherAsset(asset, manifest, layer, frame, {
+      longitude: 0,
+      latitude: 0
+    });
+    const northEast = sampleWeatherAsset(asset, manifest, layer, frame, {
+      longitude: 2,
+      latitude: 2
+    });
+
+    expect(southWest?.kind).toBe("scalar");
+    expect(northEast?.kind).toBe("scalar");
+    if (southWest?.kind === "scalar" && northEast?.kind === "scalar") {
+      expect(southWest.value).toBe(0);
+      expect(northEast.value).toBe(8);
+    }
+  });
+
   it("returns wind speed and meteorological direction", () => {
     const manifest = createWeatherManifest();
     const layer = manifest.layers[1];

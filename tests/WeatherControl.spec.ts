@@ -45,7 +45,11 @@ describe("WeatherControl", () => {
       refresh: vi.fn(),
       destroy: vi.fn()
     };
-    const control = new WeatherControl({ controller });
+    const formatTime = vi.fn(
+      (frame: (typeof manifest.frames)[number]) =>
+        `Synthetic +${frame.leadHour}h`
+    );
+    const control = new WeatherControl({ controller, formatTime });
     const element = control.onAdd(undefined);
     const selects = element.querySelectorAll("select");
     const ranges = element.querySelectorAll<HTMLInputElement>('input[type="range"]');
@@ -67,6 +71,10 @@ describe("WeatherControl", () => {
     expect(setLayer).toHaveBeenCalledWith("wind");
     expect(setTime).toHaveBeenCalledWith("2026-09-24T03:00:00Z");
     expect(setOpacity).toHaveBeenCalledWith(0.4);
+    expect(element.querySelector("output")?.textContent).toBe(
+      "Synthetic +0h"
+    );
+    expect(formatTime).toHaveBeenCalledWith(manifest.frames[0]);
 
     control.onRemove();
     expect(element.isConnected).toBe(false);

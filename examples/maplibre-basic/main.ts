@@ -6,6 +6,10 @@ import { WeatherControl } from "../../src/control/index.js";
 import "../../src/control/control.css";
 import "./style.css";
 
+const COVERAGE_BOUNDS: readonly [number, number, number, number] = [
+  -20, 30, 40, 70
+];
+
 export async function startExample(): Promise<void> {
   maplibregl.setWorkerUrl(mapLibreWorkerUrl);
 
@@ -39,12 +43,16 @@ export async function startExample(): Promise<void> {
       controller: weather,
       messages: {
         layer: "Layer",
-        time: "Forecast time",
+        time: "Synthetic frame",
         opacity: "Opacity"
-      }
+      },
+      formatTime: (frame) => `T+${frame.leadHour} h · synthetic`
     }),
     "top-right"
   );
+
+  addReferenceGrid(map);
+  document.querySelector("#demo-notice")?.removeAttribute("hidden");
 
   map.on("click", async (event) => {
     const value = await weather.getValueAt({
@@ -62,5 +70,57 @@ export async function startExample(): Promise<void> {
       .setLngLat(event.lngLat)
       .setText(description)
       .addTo(map);
+  });
+}
+
+function addReferenceGrid(map: maplibregl.Map): void {
+  const [west, south, east, north] = COVERAGE_BOUNDS;
+  const features: Array<{
+    type: "Feature";
+    properties: Record<string, never>;
+    geometry: { type: "LineString"; coordinates: number[][] };
+  }> = [];
+
+  for (let longitude = west; longitude <= east; longitude += 10) {
+    features.push({
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [longitude, south],
+          [longitude, north]
+        ]
+      }
+    });
+  }
+  for (let latitude = south; latitude <= north; latitude += 10) {
+    features.push({
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "LineString",
+        coordinates: [
+          [west, latitude],
+          [east, latitude]
+        ]
+      }
+    });
+  }
+
+  map.addSource("demo-coordinate-grid", {
+    type: "geojson",
+    data: { type: "FeatureCollection", features }
+  });
+  map.addLayer({
+    id: "demo-coordinate-grid",
+    type: "line",
+    source: "demo-coordinate-grid",
+    paint: {
+      "line-color": "#17384f",
+      "line-opacity": 0.42,
+      "line-width": 1,
+      "line-dasharray": [3, 3]
+    }
   });
 }

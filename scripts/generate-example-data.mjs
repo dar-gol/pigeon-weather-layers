@@ -1,18 +1,44 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { PNG } from "pngjs";
 
 const width = 161;
 const height = 101;
 const datasetId = "synthetic-europe";
-const runId = "demo-run";
-const frameKeys = ["f000", "f003", "f006"];
+const frameHours = [0, 3, 6];
+const frameKeys = frameHours.map(createFrameKey);
 const layerIds = ["temperature", "precipitation", "wind"];
+const generatedAt = new Date();
+const issuedAt = new Date(generatedAt);
+issuedAt.setUTCMinutes(0, 0, 0);
+issuedAt.setUTCHours(Math.floor(issuedAt.getUTCHours() / 6) * 6);
+const runId = `demo-${formatRunId(issuedAt)}`;
+const manifestDirectory = resolve("examples/maplibre-basic/public/weather");
 const outputRoot = resolve(
-  "examples/maplibre-basic/public/weather",
+  manifestDirectory,
   datasetId,
   runId
 );
+
+function formatRunId(date) {
+  return date
+    .toISOString()
+    .replaceAll("-", "")
+    .replaceAll(":", "")
+    .slice(0, 11) + "Z";
+}
+
+function createFrameKey(leadHour) {
+  return `f${String(leadHour).padStart(3, "0")}`;
+}
+
+function addHours(date, hours) {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function toManifestTimestamp(date) {
+  return date.toISOString().replace(".000Z", "Z");
+}
 
 function encodeLinear(value, minimum, maximum) {
   return Math.round(1 + (254 * (value - minimum)) / (maximum - minimum));
@@ -65,6 +91,8 @@ function createPng(layerId, frameIndex) {
   });
 }
 
+await rm(manifestDirectory, { recursive: true, force: true });
+
 for (const layerId of layerIds) {
   const layerDirectory = resolve(outputRoot, layerId);
   await mkdir(layerDirectory, { recursive: true });
@@ -79,14 +107,14 @@ for (const layerId of layerIds) {
 const manifest = {
   schemaVersion: 1,
   datasetId,
-  sourcePolicyVersion: "demo-1",
+  sourcePolicyVersion: "demo-2",
   run: {
     id: runId,
-    model: "synthetic-demo",
-    issuedAt: "2030-01-01T00:00:00Z",
-    generatedAt: "2030-01-01T00:00:00Z",
-    staleAfter: "2030-01-02T00:00:00Z",
-    availableUntil: "2030-01-03T00:00:00Z"
+    model: "synthetic-demo-not-a-forecast",
+    issuedAt: toManifestTimestamp(issuedAt),
+    generatedAt: toManifestTimestamp(generatedAt),
+    staleAfter: toManifestTimestamp(addHours(generatedAt, 12)),
+    availableUntil: toManifestTimestamp(addHours(generatedAt, 24))
   },
   coverage: {
     bounds: [-20, 30, 40, 70],
@@ -109,10 +137,10 @@ const manifest = {
     defaultMode: "nearest",
     maxDistanceMinutes: 180
   },
-  frames: frameKeys.map((timeKey, index) => ({
-    timeKey,
-    leadHour: index * 3,
-    validTime: `2030-01-01T${String(index * 3).padStart(2, "0")}:00:00Z`
+  frames: frameHours.map((leadHour) => ({
+    timeKey: createFrameKey(leadHour),
+    leadHour,
+    validTime: toManifestTimestamp(addHours(issuedAt, leadHour))
   })),
   layers: [
     {
@@ -165,17 +193,18 @@ const manifest = {
   ],
   attributions: [
     {
-      label: "Synthetic demo data",
+      label: "Synthetic demo — not a weather forecast",
       sourceUrl: "https://github.com/dar-gol/pigeon-weather-layers",
       termsUrl: "https://github.com/dar-gol/pigeon-weather-layers/blob/main/LICENSE",
       license: "Apache-2.0",
       modified: true,
-      modifications: ["Programmatically generated for this example"]
+      modifications: [
+        "Programmatically generated test pattern; not observed or forecast weather"
+      ]
     }
   ]
 };
 
-const manifestDirectory = resolve("examples/maplibre-basic/public/weather");
 await mkdir(manifestDirectory, { recursive: true });
 await writeFile(
   resolve(manifestDirectory, "manifest.json"),
